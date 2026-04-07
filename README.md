@@ -139,6 +139,24 @@ Or via npm:
 VERCEL_BASE_URL=https://tiny-svn-proxy.vercel.app SVN_PROXY_SECRET=YOUR_SECRET npm run test:remote
 ```
 
+#### Workarounds for restrictive networks (no VPN)
+
+If the smoke tests succeed on VPN but fail on your normal network, it is often due to **broken/blocked IPv6** or **DNS restrictions** on your local network.
+
+- **Force IPv4 for the smoke tests** (recommended):
+
+```bash
+SMOKE_FORCE_IPV4=1 VERCEL_BASE_URL=https://tiny-svn-proxy.vercel.app npm run test:remote
+```
+
+- **Skip the remote smoke tests when the local network cannot reach Vercel** (opt-in):
+
+```bash
+SMOKE_SKIP_ON_NETWORK_FAILURE=1 VERCEL_BASE_URL=https://tiny-svn-proxy.vercel.app npm run test:remote
+```
+
+This keeps the tests strict by default, but allows you to run the rest of the suite in environments that block Vercel.
+
 ## Example
 
 If your upstream server is:

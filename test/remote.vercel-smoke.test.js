@@ -1,5 +1,54 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const dns = require('node:dns');
+
+function envFlag(name) {
+  const v = process.env[name];
+  if (v == null) return false;
+  return !/^(0|false|no|off)$/i.test(String(v).trim());
+}
+
+function tryEnableIpv4OnlyNetworking() {
+  // Common workaround when a network advertises IPv6 but it is blocked/broken
+  // (VPNs often "fix" this by changing DNS/routes).
+  dns.setDefaultResultOrder?.('ipv4first');
+
+  // Node's fetch uses undici; forcing connect family=4 avoids IPv6 connect attempts.
+  try {
+    // eslint-disable-next-line n/no-extraneous-require
+    const { Agent, setGlobalDispatcher } = require('undici');
+    setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
+  } catch {
+    // If undici isn't available for some reason, ipv4first DNS ordering still helps.
+  }
+}
+
+function isLocalNetworkError(err) {
+  const codes = new Set([
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET'
+  ]);
+
+  const stack = [err];
+  while (stack.length) {
+    const e = stack.pop();
+    if (!e) continue;
+    if (typeof e.code === 'string' && codes.has(e.code)) return true;
+    if (typeof e.cause === 'object' && e.cause) stack.push(e.cause);
+  }
+  return false;
+}
+
+if (envFlag('SMOKE_FORCE_IPV4') || envFlag('FORCE_IPV4')) {
+  tryEnableIpv4OnlyNetworking();
+}
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -62,22 +111,30 @@ function prettyJson(obj) {
   }
 }
 
-test('vercel smoke: OPTIONS reaches upstream SVN/WebDAV', async () => {
+test('vercel smoke: OPTIONS reaches upstream SVN/WebDAV', async (t) => {
   const baseUrl = normalizeBaseUrl(requireEnv('VERCEL_BASE_URL'));
   const upstream = 'svn.apache.org/repos/asf/subversion/trunk/';
   const url = `${baseUrl}/api/https/${upstream}`;
 
-  const res = await fetchWithTimeout(
-    url,
-    {
-      method: 'OPTIONS',
-      redirect: 'manual',
-      headers: {
-        ...buildAuthHeaders()
-      }
-    },
-    25000
-  );
+  let res;
+  try {
+    res = await fetchWithTimeout(
+      url,
+      {
+        method: 'OPTIONS',
+        redirect: 'manual',
+        headers: {
+          ...buildAuthHeaders()
+        }
+      },
+      25000
+    );
+  } catch (err) {
+    if (envFlag('SMOKE_SKIP_ON_NETWORK_FAILURE') && isLocalNetworkError(err)) {
+      t.skip(`Local network prevented reaching Vercel (${err?.code || err}). Try SMOKE_FORCE_IPV4=1 or run behind VPN.`);
+    }
+    throw err;
+  }
   const body = await readBodySnippet(res);
   const diagHeaders = pickHeaders(res, [
     'server',
@@ -137,31 +194,39 @@ test('vercel smoke: OPTIONS reaches upstream SVN/WebDAV', async () => {
   );
 });
 
-test('vercel smoke: PROPFIND Depth:0 reaches upstream SVN/WebDAV', async () => {
+test('vercel smoke: PROPFIND Depth:0 reaches upstream SVN/WebDAV', async (t) => {
   const baseUrl = normalizeBaseUrl(requireEnv('VERCEL_BASE_URL'));
   const upstream = 'svn.apache.org/repos/asf/subversion/trunk/';
   const url = `${baseUrl}/api/https/${upstream}`;
 
-  const res = await fetchWithTimeout(
-    url,
-    {
-      method: 'PROPFIND',
-      redirect: 'manual',
-      headers: {
-        Depth: '0',
-        'Content-Type': 'text/xml; charset="utf-8"',
-        ...buildAuthHeaders()
-      },
-      body: `<?xml version="1.0" encoding="utf-8"?>
+  let res;
+  try {
+    res = await fetchWithTimeout(
+      url,
+      {
+        method: 'PROPFIND',
+        redirect: 'manual',
+        headers: {
+          Depth: '0',
+          'Content-Type': 'text/xml; charset="utf-8"',
+          ...buildAuthHeaders()
+        },
+        body: `<?xml version="1.0" encoding="utf-8"?>
 <D:propfind xmlns:D="DAV:">
   <D:prop>
     <D:resourcetype/>
     <D:getcontentlength/>
   </D:prop>
 </D:propfind>`
-    },
-    25000
-  );
+      },
+      25000
+    );
+  } catch (err) {
+    if (envFlag('SMOKE_SKIP_ON_NETWORK_FAILURE') && isLocalNetworkError(err)) {
+      t.skip(`Local network prevented reaching Vercel (${err?.code || err}). Try SMOKE_FORCE_IPV4=1 or run behind VPN.`);
+    }
+    throw err;
+  }
   const body = await readBodySnippet(res);
 
   assert.ok(
