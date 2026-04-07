@@ -1,37 +1,15 @@
 // (c)AI[CoPilot+Cursor]
 
 const { URL } = require('url');
+
+const { GIT_SHA, isAuthorized, setWwwAuthenticate, wantsHtml } = require('../lib/requestContext');
 const { renderStatusPage, sendHtml } = require('../lib/statusPage');
 
-const GIT_SHA =
-  process.env.VERCEL_GIT_COMMIT_SHA ||
-  process.env.GIT_COMMIT ||
-  process.env.COMMIT_SHA ||
-  process.env.GIT_SHA ||
-  'unknown';
-  
-const SECRET = process.env.SVN_PROXY_SECRET || process.env.PROXY_SECRET || '';
-
-function isAuthorized(req) {
-  if (!SECRET) return true;
-  const authHeader = (req.headers.authorization || '').trim();
-  if (authHeader.toLowerCase().startsWith('bearer ')) {
-    if (authHeader.slice(7).trim() === SECRET) return true;
-  }
-
-  const secretHeader = req.headers['x-proxy-secret'] || req.headers['x-svn-proxy-secret'];
-  if (secretHeader === SECRET) return true;
-
-  try {
-    const url = new URL(req.url, 'http://localhost');
-    if (url.searchParams.get('secret') === SECRET) return true;
-  } catch (err) {
-    // ignore malformed URL
-  }
-
-  return false;
-}
-
+/// <summary>
+/// Builds the target URL from the raw URL.
+/// </summary>
+/// <param name="rawUrl">The raw URL to build the target URL from.</param>
+/// <returns>The target URL.</returns>
 function buildTargetUrl(rawUrl) {
   if (!rawUrl) return null;
   const [pathWithoutQuery, queryString] = rawUrl.split('?');
@@ -47,6 +25,24 @@ function buildTargetUrl(rawUrl) {
   return cleanedQuery ? `${targetUrl}?${cleanedQuery}` : targetUrl;
 }
 
+/// <summary>
+/// Copies the response headers from the upstream response to the response object.
+/// </summary>
+/// <param name="response">The upstream response object.</param>
+/// <param name="res">The response object to copy the headers to.</param>
+function copyResponseHeaders(response, res) {
+  for (const [name, value] of response.headers.entries()) {
+    if (name.toLowerCase() === 'transfer-encoding') continue;
+    if (name.toLowerCase() === 'content-encoding') continue;
+    res.setHeader(name, value);
+  }
+}
+
+/// <summary>
+/// Filters the request headers to remove unnecessary headers.
+/// </summary>
+/// <param name="headers">The request headers to filter.</param>
+/// <returns>The filtered headers.</returns>
 function filterRequestHeaders(headers) {
   const result = {};
   for (const [name, value] of Object.entries(headers || {})) {
@@ -58,14 +54,6 @@ function filterRequestHeaders(headers) {
   return result;
 }
 
-function copyResponseHeaders(response, res) {
-  for (const [name, value] of response.headers.entries()) {
-    if (name.toLowerCase() === 'transfer-encoding') continue;
-    if (name.toLowerCase() === 'content-encoding') continue;
-    res.setHeader(name, value);
-  }
-}
-
 module.exports = async function (req, res) {
   let pathname = '';
   try {
@@ -75,9 +63,8 @@ module.exports = async function (req, res) {
   }
 
   if (!isAuthorized(req)) {
-    const accept = String(req.headers.accept || '');
-    if (req.method === 'GET' && accept.includes('text/html')) {
-      res.setHeader('WWW-Authenticate', 'Bearer realm="tiny-svn-proxy"');
+    if (req.method === 'GET' && wantsHtml(req)) {
+      setWwwAuthenticate(res);
       sendHtml(
         res,
         401,
@@ -92,29 +79,14 @@ module.exports = async function (req, res) {
     }
 
     res.statusCode = 401;
-    res.setHeader('WWW-Authenticate', 'Bearer realm="tiny-svn-proxy"');
+    setWwwAuthenticate(res);
     res.end('Unauthorized. Provide the proxy secret via Authorization, X-Proxy-Secret, or ?secret=.');
-    return;
-  }
-
-  if (req.method === 'GET' && (pathname === '/api' || pathname === '/api/')) {
-    sendHtml(
-      res,
-      200,
-      renderStatusPage({
-        title: 'tiny-svn-proxy',
-        message: 'This service is up. Use the /api/https/... endpoint as an SVN reverse proxy.',
-        statusCode: 200,
-        gitSha: GIT_SHA
-      })
-    );
     return;
   }
 
   const targetUrl = buildTargetUrl(req.url);
   if (!targetUrl) {
-    const accept = String(req.headers.accept || '');
-    if (req.method === 'GET' && accept.includes('text/html')) {
+    if (req.method === 'GET' && wantsHtml(req)) {
       sendHtml(
         res,
         400,
