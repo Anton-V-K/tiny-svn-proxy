@@ -1,5 +1,27 @@
 const { URL } = require('url');
 
+const SECRET = process.env.SVN_PROXY_SECRET || process.env.PROXY_SECRET || '';
+
+function isAuthorized(req) {
+  if (!SECRET) return true;
+  const authHeader = (req.headers.authorization || '').trim();
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    if (authHeader.slice(7).trim() === SECRET) return true;
+  }
+
+  const secretHeader = req.headers['x-proxy-secret'] || req.headers['x-svn-proxy-secret'];
+  if (secretHeader === SECRET) return true;
+
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.searchParams.get('secret') === SECRET) return true;
+  } catch (err) {
+    // ignore malformed URL
+  }
+
+  return false;
+}
+
 function buildTargetUrl(rawUrl) {
   if (!rawUrl) return null;
   const [pathWithoutQuery, queryString] = rawUrl.split('?');
@@ -7,11 +29,12 @@ function buildTargetUrl(rawUrl) {
   const proxyPath = pathWithoutQuery.slice(5);
   const targetUrl = proxyPath.replace(/^\/(https?)\//, '$1://');
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) return null;
-  try {
-    return queryString ? `${targetUrl}?${queryString}` : targetUrl;
-  } catch (err) {
-    return null;
-  }
+  if (!queryString) return targetUrl;
+
+  const searchParams = new URLSearchParams(queryString);
+  searchParams.delete('secret');
+  const cleanedQuery = searchParams.toString();
+  return cleanedQuery ? `${targetUrl}?${cleanedQuery}` : targetUrl;
 }
 
 function filterRequestHeaders(headers) {
@@ -34,6 +57,13 @@ function copyResponseHeaders(response, res) {
 }
 
 module.exports = async function (req, res) {
+  if (!isAuthorized(req)) {
+    res.statusCode = 401;
+    res.setHeader('WWW-Authenticate', 'Bearer realm="tiny-svn-proxy"');
+    res.end('Unauthorized. Provide the proxy secret via Authorization, X-Proxy-Secret, or ?secret=.');
+    return;
+  }
+
   const targetUrl = buildTargetUrl(req.url);
   if (!targetUrl) {
     res.statusCode = 400;

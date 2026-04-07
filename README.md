@@ -1,4 +1,4 @@
-# Tiny SVN HTTPS Reverse Proxy for Vercel
+# Tiny SVN HTTPS Reverse Proxy (for Vercel)
 
 This is a small Vercel proxy function that forwards SVN HTTPS traffic to an upstream SVN server.
 
@@ -37,6 +37,26 @@ This is a small Vercel proxy function that forwards SVN HTTPS traffic to an upst
 2. Use that proxy URL as the repository URL for checkout, switch, update, etc.
 
 3. If your SVN path contains spaces or special characters, URL-encode them.
+
+## Authentication
+
+If you set the environment variable `SVN_PROXY_SECRET` or `PROXY_SECRET`, the proxy requires that secret for every request.
+
+- Preferred: send an HTTP header:
+  - `Authorization: Bearer <secret>`
+- Alternative headers:
+  - `X-Proxy-Secret: <secret>`
+  - `X-SVN-Proxy-Secret: <secret>`
+- If headers are not available, append the secret as a query parameter:
+  - `?secret=<secret>`
+
+Example:
+
+```text
+https://tiny-svn-proxy.vercel.app/api/https/svn.example.com/svn/myproject?secret=YOUR_SECRET
+```
+
+> Note: the query-string form is convenient for clients that cannot set custom request headers, but sending the secret in a URL is less secure than using headers.
 
 ## Example
 
