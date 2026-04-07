@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 
-const handler = require('../api/[...segments].js');
+const handler = require('../api/proxy.js');
 
 function startServer() {
   return new Promise((resolve, reject) => {

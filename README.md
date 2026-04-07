@@ -8,6 +8,7 @@ This is a small Vercel proxy function that forwards SVN HTTPS traffic to an upst
 
 - Request format: `https://<vercel-app>.vercel.app/api/https/<svn-host>/<svn-path>`
 - The proxy rewrites that request to `https://<svn-host>/<svn-path>` and forwards the response.
+- Internally (on Vercel), `vercel.json` routes `/api/<anything>` into `api/proxy.js`.
 
 ## Status page
 
@@ -17,7 +18,7 @@ Opening `https://<vercel-app>.vercel.app/api` in a browser shows a small “serv
 
 ## Deploy on Vercel (Free Tier)
 
-This project is already a Vercel Serverless Function (`api/[...segments].js`) and includes `vercel.json` to run on Node.js 24.
+This project is a Vercel Serverless Function (`api/proxy.js`) and includes `vercel.json` to run on Node.js 24.
 
 ### Option A: Deploy via Vercel Dashboard (recommended)
 
@@ -81,6 +82,7 @@ This project is already a Vercel Serverless Function (`api/[...segments].js`) an
 
 If you set the environment variable `SVN_PROXY_SECRET` or `PROXY_SECRET`, the proxy requires that secret for every request.
 
+- For SVN clients (recommended): use **Basic auth** and set the **password** to the proxy secret (username can be anything).
 - Preferred: send an HTTP header:
   - `Authorization: Bearer <secret>`
 - Alternative headers:
@@ -96,6 +98,46 @@ https://tiny-svn-proxy.vercel.app/api/https/svn.example.com/svn/myproject?secret
 ```
 
 > Note: the query-string form is convenient for clients that cannot set custom request headers, but sending the secret in a URL is less secure than using headers.
+
+## Smoke tests
+
+These are intended to help diagnose issues where SVN clients (e.g. TortoiseSVN) can’t connect, by exercising SVN/WebDAV-like HTTP methods (`OPTIONS`, `PROPFIND`) against a **public SVN repo** through the proxy.
+
+### Local smoke tests (no Vercel needed)
+
+Run the proxy handler locally and verify it can talk to the public upstream:
+
+```bash
+node --test test/all.test.js
+```
+
+or:
+
+```bash
+npm test
+```
+
+### Remote smoke tests (against deployed Vercel URL)
+
+This is the fastest way to detect platform/routing issues (for example, if a front proxy rejects WebDAV methods before your function runs).
+
+Set the base URL of your deployment:
+
+```bash
+VERCEL_BASE_URL=https://tiny-svn-proxy.vercel.app node --test test/remote.vercel-smoke.test.js
+```
+
+If your deployment is protected by a proxy secret, provide it so the test sends **Basic auth**:
+
+```bash
+VERCEL_BASE_URL=https://tiny-svn-proxy.vercel.app SVN_PROXY_SECRET=YOUR_SECRET node --test test/remote.vercel-smoke.test.js
+```
+
+Or via npm:
+
+```bash
+VERCEL_BASE_URL=https://tiny-svn-proxy.vercel.app SVN_PROXY_SECRET=YOUR_SECRET npm run test:remote
+```
 
 ## Example
 

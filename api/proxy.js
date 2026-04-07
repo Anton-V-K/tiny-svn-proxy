@@ -14,7 +14,27 @@ const { renderStatusPage, sendHtml } = require('../lib/statusPage');
 function buildTargetUrl(rawUrl) {
   if (!rawUrl) return null;
   const [pathWithoutQuery, queryString] = rawUrl.split('?');
+
+  // Expect shape: /api/<rest...> (rewritten here via vercel.json)
   if (!pathWithoutQuery.startsWith('/api/')) return null;
+
+  // When coming through the Vercel route, the original path is passed as ?path=...
+  // Example: /api/proxy?path=https/svn.example.com/repo
+  // Note: This function is used both locally and on Vercel. On Vercel, `vercel.json` routes
+  // `/api/<anything>` → `/api/proxy?path=<anything>` so we need to parse `path` when present.
+  try {
+    const parsed = new URL(rawUrl, 'http://localhost');
+    const p = parsed.searchParams.get('path');
+    if (p) {
+      const cleaned = p.startsWith('/') ? p.slice(1) : p;
+      parsed.searchParams.delete('path');
+      const remainingQuery = parsed.searchParams.toString();
+      const fakeRawUrl = `/api/${cleaned}${remainingQuery ? `?${remainingQuery}` : ''}`;
+      return buildTargetUrl(fakeRawUrl);
+    }
+  } catch (err) {
+    // ignore malformed URL; fall back to path-based parsing below
+  }
 
   // Accept multiple incoming shapes:
   // - /api/https/<host>/<path>
@@ -193,7 +213,7 @@ async function proxyHandler(req, res) {
   }
 }
 
-// Expose a couple helpers for local tests/debugging without making them part of the API surface.
 proxyHandler._buildTargetUrl = buildTargetUrl;
 
 module.exports = proxyHandler;
+
