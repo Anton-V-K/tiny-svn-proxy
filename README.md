@@ -13,7 +13,7 @@ This is a small Vercel proxy function that forwards SVN HTTPS traffic to an upst
 
 ## Deploy on Vercel (Free Tier)
 
-This project is already a Vercel Serverless Function (`api/[...segments].js`) and includes `vercel.json` to run on Node.js 20.
+This project is already a Vercel Serverless Function (`api/[...segments].js`) and includes `vercel.json` to run on Node.js 24.
 
 ### Option A: Deploy via Vercel Dashboard (recommended)
 
