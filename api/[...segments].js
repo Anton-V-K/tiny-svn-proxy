@@ -23,14 +23,23 @@ function buildTargetUrl(rawUrl) {
   // - /api/https:/<host>/<path>    (collapsed slashes)
   const proxyPath = pathWithoutQuery.slice(5); // keep leading '/'
   let targetUrl = proxyPath.startsWith('/') ? proxyPath.slice(1) : proxyPath;
-  targetUrl = targetUrl.replace(/^https?:\/\/+/i, (m) => m.toLowerCase()); // normalize slashes
 
-  if (!targetUrl.toLowerCase().startsWith('http://') && !targetUrl.toLowerCase().startsWith('https://')) {
-    // Convert "https/<host>/..." into "https://<host>/..."
-    targetUrl = targetUrl.replace(/^(https?):\/+/i, '$1://'); // handles https/ , https:/ , https://
-    targetUrl = targetUrl.replace(/^(https?):\/\//i, '$1://');
-    targetUrl = targetUrl.replace(/^(https?):\/([^/])/i, '$1://$2');
+  // If the path is the documented form (starts with "http/" or "https/"), convert it.
+  // Examples:
+  // - https/svn.example.com/repo   -> https://svn.example.com/repo
+  // - https:/svn.example.com/repo  -> https://svn.example.com/repo
+  // - https://svn.example.com/repo -> https://svn.example.com/repo
+  if (/^(https?|http)\//i.test(targetUrl) || /^(https?|http):\/[^/]/i.test(targetUrl)) {
+    // Handle both "https/<host>" and "https:/<host>" and "https://<host>" variants.
+    targetUrl = targetUrl.replace(/^(https?)\/+/i, '$1://');
+    targetUrl = targetUrl.replace(/^(https?):\/+/i, '$1://');
+    targetUrl = targetUrl.replace(/^(http)\/+/i, '$1://');
+    targetUrl = targetUrl.replace(/^(http):\/+/i, '$1://');
   }
+
+  // Normalize accidental extra slashes in scheme (https:////host -> https://host).
+  targetUrl = targetUrl.replace(/^(https?):\/\/+/i, '$1://');
+  targetUrl = targetUrl.replace(/^(http):\/\/+/i, '$1://');
 
   if (!targetUrl.toLowerCase().startsWith('http://') && !targetUrl.toLowerCase().startsWith('https://')) return null;
   if (!queryString) return targetUrl;
@@ -96,7 +105,7 @@ function filterRequestHeaders(headers) {
   return result;
 }
 
-module.exports = async function (req, res) {
+async function proxyHandler(req, res) {
   let pathname = '';
   try {
     pathname = new URL(req.url, 'http://localhost').pathname || '';
@@ -182,4 +191,9 @@ module.exports = async function (req, res) {
     res.statusCode = 502;
     res.end(`Proxy error: ${error.message}`);
   }
-};
+}
+
+// Expose a couple helpers for local tests/debugging without making them part of the API surface.
+proxyHandler._buildTargetUrl = buildTargetUrl;
+
+module.exports = proxyHandler;
