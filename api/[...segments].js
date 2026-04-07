@@ -1,6 +1,7 @@
 // (c)AI[CoPilot+Cursor]
 
 const { URL } = require('url');
+const { Readable, pipeline } = require('stream');
 
 const { GIT_SHA, isAuthorized, setWwwAuthenticate, wantsHtml } = require('../lib/requestContext');
 const { renderStatusPage, sendHtml } = require('../lib/statusPage');
@@ -35,6 +36,32 @@ function copyResponseHeaders(response, res) {
     if (name.toLowerCase() === 'transfer-encoding') continue;
     if (name.toLowerCase() === 'content-encoding') continue;
     res.setHeader(name, value);
+  }
+}
+
+function getExternalBaseUrl(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https';
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  if (!host) return null;
+  return `${proto}://${host}`;
+}
+
+function rewriteLocationHeaderIfNeeded(req, targetUrl, res) {
+  const location = res.getHeader('location');
+  if (!location || Array.isArray(location)) return;
+
+  const externalBase = getExternalBaseUrl(req);
+  if (!externalBase) return;
+
+  try {
+    const target = new URL(targetUrl);
+    const loc = new URL(String(location), target);
+    if (loc.host !== target.host) return;
+
+    const proxied = `${externalBase}/api/${target.protocol.replace(':', '')}/${target.host}${loc.pathname}${loc.search}${loc.hash}`;
+    res.setHeader('location', proxied);
+  } catch (err) {
+    // ignore malformed Location
   }
 }
 
@@ -114,18 +141,28 @@ module.exports = async function (req, res) {
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     options.body = req;
+    // Required by undici/node fetch when streaming a request body.
+    options.duplex = 'half';
   }
 
   try {
     const upstream = await fetch(targetUrl, options);
     res.statusCode = upstream.status;
     copyResponseHeaders(upstream, res);
+    rewriteLocationHeaderIfNeeded(req, targetUrl, res);
     const upstreamBody = upstream.body;
     if (!upstreamBody) {
       res.end();
       return;
     }
-    upstreamBody.pipe(res);
+
+    const nodeStream = Readable.fromWeb(upstreamBody);
+    pipeline(nodeStream, res, (err) => {
+      if (err && !res.headersSent) {
+        res.statusCode = 502;
+        res.end(`Proxy streaming error: ${err.message}`);
+      }
+    });
   } catch (error) {
     res.statusCode = 502;
     res.end(`Proxy error: ${error.message}`);
