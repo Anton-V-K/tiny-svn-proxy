@@ -15,9 +15,24 @@ function buildTargetUrl(rawUrl) {
   if (!rawUrl) return null;
   const [pathWithoutQuery, queryString] = rawUrl.split('?');
   if (!pathWithoutQuery.startsWith('/api/')) return null;
-  const proxyPath = pathWithoutQuery.slice(5);
-  const targetUrl = proxyPath.replace(/^\/(https?)\//, '$1://');
-  if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) return null;
+
+  // Accept multiple incoming shapes:
+  // - /api/https/<host>/<path>
+  // - /api/http/<host>/<path>
+  // - /api/https://<host>/<path>   (some clients paste full scheme)
+  // - /api/https:/<host>/<path>    (collapsed slashes)
+  const proxyPath = pathWithoutQuery.slice(5); // keep leading '/'
+  let targetUrl = proxyPath.startsWith('/') ? proxyPath.slice(1) : proxyPath;
+  targetUrl = targetUrl.replace(/^https?:\/\/+/i, (m) => m.toLowerCase()); // normalize slashes
+
+  if (!targetUrl.toLowerCase().startsWith('http://') && !targetUrl.toLowerCase().startsWith('https://')) {
+    // Convert "https/<host>/..." into "https://<host>/..."
+    targetUrl = targetUrl.replace(/^(https?):\/+/i, '$1://'); // handles https/ , https:/ , https://
+    targetUrl = targetUrl.replace(/^(https?):\/\//i, '$1://');
+    targetUrl = targetUrl.replace(/^(https?):\/([^/])/i, '$1://$2');
+  }
+
+  if (!targetUrl.toLowerCase().startsWith('http://') && !targetUrl.toLowerCase().startsWith('https://')) return null;
   if (!queryString) return targetUrl;
 
   const searchParams = new URLSearchParams(queryString);
