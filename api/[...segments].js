@@ -1,7 +1,7 @@
 // (c)AI[CoPilot+Cursor]
 
 const { URL } = require('url');
-const { renderStatusPage, sendHtml } = require('./statusPage');
+const { renderStatusPage, sendHtml } = require('../lib/statusPage');
 
 const GIT_SHA =
   process.env.VERCEL_GIT_COMMIT_SHA ||
