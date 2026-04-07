@@ -1,5 +1,15 @@
-const { URL } = require('url');
+// (c)AI[CoPilot+Cursor]
 
+const { URL } = require('url');
+const { renderStatusPage, sendHtml } = require('./statusPage');
+
+const GIT_SHA =
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.GIT_COMMIT ||
+  process.env.COMMIT_SHA ||
+  process.env.GIT_SHA ||
+  'unknown';
+  
 const SECRET = process.env.SVN_PROXY_SECRET || process.env.PROXY_SECRET || '';
 
 function isAuthorized(req) {
@@ -57,15 +67,67 @@ function copyResponseHeaders(response, res) {
 }
 
 module.exports = async function (req, res) {
+  let pathname = '';
+  try {
+    pathname = new URL(req.url, 'http://localhost').pathname || '';
+  } catch (err) {
+    pathname = '';
+  }
+
   if (!isAuthorized(req)) {
+    const accept = String(req.headers.accept || '');
+    if (req.method === 'GET' && accept.includes('text/html')) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="tiny-svn-proxy"');
+      sendHtml(
+        res,
+        401,
+        renderStatusPage({
+          title: 'tiny-svn-proxy',
+          message: 'Unauthorized. Provide the proxy secret via Authorization: Bearer, X-Proxy-Secret, or ?secret=.',
+          statusCode: 401,
+          gitSha: GIT_SHA
+        })
+      );
+      return;
+    }
+
     res.statusCode = 401;
     res.setHeader('WWW-Authenticate', 'Bearer realm="tiny-svn-proxy"');
     res.end('Unauthorized. Provide the proxy secret via Authorization, X-Proxy-Secret, or ?secret=.');
     return;
   }
 
+  if (req.method === 'GET' && (pathname === '/api' || pathname === '/api/')) {
+    sendHtml(
+      res,
+      200,
+      renderStatusPage({
+        title: 'tiny-svn-proxy',
+        message: 'This service is up. Use the /api/https/... endpoint as an SVN reverse proxy.',
+        statusCode: 200,
+        gitSha: GIT_SHA
+      })
+    );
+    return;
+  }
+
   const targetUrl = buildTargetUrl(req.url);
   if (!targetUrl) {
+    const accept = String(req.headers.accept || '');
+    if (req.method === 'GET' && accept.includes('text/html')) {
+      sendHtml(
+        res,
+        400,
+        renderStatusPage({
+          title: 'tiny-svn-proxy',
+          message: 'Bad request. Use /api/https/<host>/<path> or /api/http/<host>/<path>.',
+          statusCode: 400,
+          gitSha: GIT_SHA
+        })
+      );
+      return;
+    }
+
     res.statusCode = 400;
     res.end('Bad request. Use /api/https/<host>/<path> or /api/http/<host>/<path>');
     return;

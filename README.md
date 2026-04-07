@@ -9,6 +9,10 @@ This is a small Vercel proxy function that forwards SVN HTTPS traffic to an upst
 - Request format: `https://<vercel-app>.vercel.app/api/https/<svn-host>/<svn-path>`
 - The proxy rewrites that request to `https://<svn-host>/<svn-path>` and forwards the response.
 
+## Status page
+
+Opening `https://<vercel-app>.vercel.app/api` in a browser shows a small “service is running” page including the deployed git commit hash (from `VERCEL_GIT_COMMIT_SHA` when available).
+
 ## Deployment
 
 ## Deploy on Vercel (Free Tier)
