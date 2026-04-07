@@ -16,7 +16,13 @@
         "PUT",
         "PATCH",
         "DELETE",
-        "OPTIONS",
+        "OPTIONS"
+      ],
+      "dest": "/api/proxy?path=$1"
+    },
+    {
+      "src": "^/api/(.+)$",
+      "methods": [
         "PROPFIND",
         "PROPPATCH",
         "MKACTIVITY",
@@ -26,9 +32,13 @@
         "MKCOL",
         "COPY",
         "MOVE",
-        "LOCK",
-        "UNLOCK"
+        "LOCK"
       ],
+      "dest": "/api/proxy?path=$1"
+    },
+    {
+      "src": "^/api/(.+)$",
+      "methods": ["UNLOCK"],
       "dest": "/api/proxy?path=$1"
     }
   ],
