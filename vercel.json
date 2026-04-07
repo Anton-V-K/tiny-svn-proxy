@@ -17,8 +17,6 @@
         "PATCH",
         "DELETE",
         "OPTIONS",
-
-        // WebDAV / SVN-over-HTTP verbs commonly used by Subversion clients
         "PROPFIND",
         "PROPPATCH",
         "MKACTIVITY",
